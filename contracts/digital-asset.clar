@@ -233,3 +233,65 @@
     (ok new-asset-id)
   )
 )
+
+;; ============================================================================
+;; PUBLIC FUNCTIONS - ASSET TRANSFERS
+;; ============================================================================
+
+;; Transfers assets directly from sender to recipient
+;; This is the basic transfer function for moving assets between accounts
+;;
+;; Parameters:
+;;   asset-id: The asset type to transfer
+;;   amount: Quantity to transfer (must be > 0)
+;;   sender: The account sending the assets (must be tx-sender)
+;;   recipient: The receiving account (must be valid principal)
+;;
+;; Returns: (ok true) on successful transfer
+;;
+;; Security notes:
+;;   - Sender must be tx-sender (prevents unauthorized transfers)
+;;   - Uses is-standard to validate recipient address
+;;   - Clarity prevents reentrancy by design (no callbacks possible)
+(define-public (transfer-assets 
+    (asset-id uint) 
+    (amount uint) 
+    (sender principal) 
+    (recipient principal))
+  (let
+    (
+      ;; Fetch current balances for both parties
+      ;; default-to ensures we get u0 for new accounts
+      (sender-current-balance 
+        (default-to u0 
+          (get balance 
+            (map-get? account-balances { account: sender, asset-id: asset-id })
+          )
+        )
+      )
+      (recipient-current-balance 
+        (default-to u0 
+          (get balance 
+            (map-get? account-balances { account: recipient, asset-id: asset-id })
+          )
+        )
+      )
+    )
+    ;; Validation sequence - fail fast on any violation
+    ;; This ordering is optimized for gas efficiency (cheap checks first)
+    
+    ;; Verify asset exists in registry
+    (asserts! (asset-exists asset-id) ERR_ASSET_NOT_FOUND)
+    
+    ;; Amount must be positive (zero transfers are rejected)
+    (asserts! (> amount u0) ERR_INVALID_AMOUNT)
+    
+    ;; Critical security check: tx-sender must match sender parameter
+    ;; This prevents one account from transferring another's assets
+    ;; tx-sender is cryptographically verified by the blockchain
+    (asserts! (is-eq tx-sender sender) ERR_UNAUTHORIZED)
+    
+    ;; Recipient must be a valid principal address
+    ;; is-standard returns true for valid standard principals
+    ;; (excludes contract principals if needed)
+    (asserts! (is-standard recipient) ERR_INVALID_RECIPIENT)
