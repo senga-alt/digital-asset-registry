@@ -181,3 +181,55 @@
       ;; More reliable than using block heights for temporal calculations
       (current-timestamp stacks-block-time)
     )
+    ;; Authorization: Only administrator can register new assets
+    ;; tx-sender is the transaction originator (cannot be spoofed)
+    (asserts! (is-eq tx-sender (var-get registry-administrator)) ERR_UNAUTHORIZED)
+    
+    ;; Prevent duplicate registration (defensive programming)
+    ;; Although counter ensures uniqueness, this check prevents logical errors
+    (asserts! (is-none (map-get? digital-assets { asset-id: new-asset-id })) ERR_ASSET_ALREADY_EXISTS)
+    
+    ;; Input validation: Ensure all parameters meet business rules
+    ;; Empty names/categories are rejected for data quality
+    (asserts! (> (len asset-name) u0) ERR_INVALID_NAME)
+    (asserts! (> (len asset-category) u0) ERR_INVALID_CATEGORY)
+    (asserts! (> maximum-supply u0) ERR_INVALID_SUPPLY)
+    (asserts! (> initial-price u0) ERR_INVALID_PRICE)
+    
+    ;; Create the asset record in the registry
+    ;; map-set creates or updates; here we know it's a new entry
+    (map-set digital-assets
+      { asset-id: new-asset-id }
+      { 
+        asset-name: asset-name, 
+        asset-category: asset-category, 
+        maximum-supply: maximum-supply, 
+        current-price: initial-price,
+        last-price-update-time: current-timestamp
+      }
+    )
+    
+    ;; Record initial price in historical tracking
+    ;; This creates the first data point for price history
+    (map-set historical-prices
+      { asset-id: new-asset-id, recorded-at: current-timestamp }
+      { price-value: initial-price }
+    )
+    
+    ;; Mint entire supply to administrator's account
+    ;; Administrator can then distribute assets as needed
+    ;; This is safer than allowing arbitrary minting after creation
+    (map-set account-balances
+      { account: (var-get registry-administrator), asset-id: new-asset-id }
+      { balance: maximum-supply }
+    )
+    
+    ;; Update the global counter for next asset
+    ;; var-set is the only way to modify data-vars in Clarity
+    (var-set asset-id-counter new-asset-id)
+    
+    ;; Return success with the new asset ID
+    ;; Clarity uses response types: (ok value) or (err value)
+    (ok new-asset-id)
+  )
+)
