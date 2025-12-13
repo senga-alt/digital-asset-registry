@@ -295,3 +295,53 @@
     ;; is-standard returns true for valid standard principals
     ;; (excludes contract principals if needed)
     (asserts! (is-standard recipient) ERR_INVALID_RECIPIENT)
+
+    ;; Verify sender has sufficient balance
+    ;; Arithmetic is safe in Clarity - underflow causes automatic abort
+    (asserts! (>= sender-current-balance amount) ERR_INSUFFICIENT_BALANCE)
+
+    ;; Debit sender account
+    ;; Arithmetic operators (+, -) in Clarity abort on overflow/underflow
+    ;; This is a key safety feature preventing common smart contract bugs
+    (map-set account-balances
+      { account: sender, asset-id: asset-id }
+      { balance: (- sender-current-balance amount) }
+    )
+
+    ;; Credit recipient account
+    ;; Creates new balance entry if recipient hasn't held this asset before
+    (map-set account-balances
+      { account: recipient, asset-id: asset-id }
+      { balance: (+ recipient-current-balance amount) }
+    )
+
+    ;; Return success indicator
+    ;; Using true as the success value is conventional
+    (ok true)
+  )
+)
+
+;; Approves a spender to transfer assets on behalf of the owner
+;; Implements the ERC20 approve pattern for delegated transfers
+;; Essential for DEX integrations and automated payment systems
+;;
+;; Parameters:
+;;   asset-id: The asset type to grant spending rights for
+;;   spender: The principal being authorized to spend
+;;   amount: Maximum amount spender can transfer
+;;
+;; Returns: (ok true) when allowance is set successfully
+;;
+;; Security considerations:
+;;   - Only the owner (tx-sender) can set allowances for their assets
+;;   - Setting amount to u0 effectively revokes the allowance
+;;   - No race conditions possible (unlike ERC20 approve issues)
+(define-public (approve-spender 
+    (asset-id uint) 
+    (spender principal) 
+    (amount uint))
+  (begin
+    ;; Validation checks
+    (asserts! (asset-exists asset-id) ERR_ASSET_NOT_FOUND)
+    (asserts! (is-standard spender) ERR_INVALID_SPENDER)
+    (asserts! (> amount u0) ERR_INVALID_AMOUNT)
