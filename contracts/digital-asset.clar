@@ -345,3 +345,51 @@
     (asserts! (asset-exists asset-id) ERR_ASSET_NOT_FOUND)
     (asserts! (is-standard spender) ERR_INVALID_SPENDER)
     (asserts! (> amount u0) ERR_INVALID_AMOUNT)
+
+    ;; Set or update the allowance
+    ;; map-set creates new entry or updates existing one
+    ;; Key includes both owner and spender for precise control
+    (map-set spending-allowances
+      { owner: tx-sender, spender: spender, asset-id: asset-id }
+      { approved-amount: amount }
+    )
+
+    ;; Return success
+    (ok true)
+  )
+)
+
+;; Transfers assets using a previously approved allowance
+;; Allows a spender to move assets from owner's account to another recipient
+;; This is the transferFrom pattern from ERC20, enabling DEX and escrow functionality
+;;
+;; Parameters:
+;;   asset-id: The asset type to transfer
+;;   amount: Quantity to transfer
+;;   owner: The account that owns the assets and granted allowance
+;;   recipient: The final destination for the assets
+;;
+;; Returns: (ok true) on successful delegated transfer
+;;
+;; Security model:
+;;   - Requires prior approval via approve-spender
+;;   - Decrements allowance by transfer amount (prevents overspending)
+;;   - Validates all participants (owner, spender, recipient)
+;;   - Atomic operation: all state changes succeed or all fail
+(define-public (transfer-from-allowance 
+    (asset-id uint) 
+    (amount uint) 
+    (owner principal) 
+    (recipient principal))
+  (let
+    (
+      ;; Fetch current allowance for this spender
+      (current-allowance 
+        (default-to u0 
+          (get approved-amount 
+            (map-get? spending-allowances 
+              { owner: owner, spender: tx-sender, asset-id: asset-id }
+            )
+          )
+        )
+      )
