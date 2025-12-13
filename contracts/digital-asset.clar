@@ -295,7 +295,7 @@
     ;; is-standard returns true for valid standard principals
     ;; (excludes contract principals if needed)
     (asserts! (is-standard recipient) ERR_INVALID_RECIPIENT)
-
+    
     ;; Verify sender has sufficient balance
     ;; Arithmetic is safe in Clarity - underflow causes automatic abort
     (asserts! (>= sender-current-balance amount) ERR_INSUFFICIENT_BALANCE)
@@ -393,3 +393,61 @@
           )
         )
       )
+      
+      ;; Fetch owner's current balance
+      (owner-current-balance 
+        (default-to u0 
+          (get balance 
+            (map-get? account-balances { account: owner, asset-id: asset-id })
+          )
+        )
+      )
+      
+      ;; Fetch recipient's current balance
+      (recipient-current-balance 
+        (default-to u0 
+          (get balance 
+            (map-get? account-balances { account: recipient, asset-id: asset-id })
+          )
+        )
+      )
+    )
+    ;; Validation sequence - comprehensive checks for delegated transfer
+    
+    (asserts! (asset-exists asset-id) ERR_ASSET_NOT_FOUND)
+    (asserts! (> amount u0) ERR_INVALID_AMOUNT)
+    (asserts! (is-standard recipient) ERR_INVALID_RECIPIENT)
+    
+    ;; Verify spender has sufficient allowance
+    ;; This is the key authorization check for delegated transfers
+    (asserts! (>= current-allowance amount) ERR_ALLOWANCE_EXCEEDED)
+    
+    ;; Verify owner has sufficient balance
+    ;; Prevents transfer even if allowance exists but funds don't
+    (asserts! (>= owner-current-balance amount) ERR_INSUFFICIENT_BALANCE)
+
+    ;; Deduct used amount from allowance
+    ;; This prevents the spender from reusing the same allowance
+    (map-set spending-allowances
+      { owner: owner, spender: tx-sender, asset-id: asset-id }
+      { approved-amount: (- current-allowance amount) }
+    )
+
+    ;; Debit owner's account
+    ;; Note: owner != tx-sender in this function
+    (map-set account-balances
+      { account: owner, asset-id: asset-id }
+      { balance: (- owner-current-balance amount) }
+    )
+
+    ;; Credit recipient's account
+    ;; Completes the three-party transfer
+    (map-set account-balances
+      { account: recipient, asset-id: asset-id }
+      { balance: (+ recipient-current-balance amount) }
+    )
+
+    ;; Return success
+    (ok true)
+  )
+)
