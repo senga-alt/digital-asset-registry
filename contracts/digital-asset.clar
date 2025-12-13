@@ -126,3 +126,58 @@
     )
   )
 )
+
+;; Retrieves historical price data for an asset at a specific timestamp
+;; Returns (some {price-value: uint}) if price was recorded at that time
+;; Returns none if no price record exists for that timestamp
+(define-read-only (fetch-historical-price (asset-id uint) (timestamp uint))
+  (map-get? historical-prices { asset-id: asset-id, recorded-at: timestamp })
+)
+
+;; Returns the current value of the asset ID counter
+;; Useful for frontends to know how many assets have been registered
+(define-read-only (get-total-assets-count)
+  (var-get asset-id-counter)
+)
+
+;; Returns the current administrator principal
+;; Public visibility allows verification of who controls the contract
+(define-read-only (get-administrator)
+  (var-get registry-administrator)
+)
+
+;; ============================================================================
+;; PUBLIC FUNCTIONS - ADMINISTRATIVE
+;; ============================================================================
+;; Public functions can modify state and must be called via transactions
+;; These require gas fees and are recorded on the blockchain
+
+;; Creates and registers a new digital asset in the registry
+;; Only the administrator can mint new asset types
+;; 
+;; Parameters:
+;;   asset-name: Descriptive name for the asset (1-64 ASCII characters)
+;;   asset-category: Classification tag (1-32 ASCII characters)
+;;   maximum-supply: Total number of units to mint (must be > 0)
+;;   initial-price: Starting price in micro-STX (must be > 0)
+;;
+;; Returns: (ok asset-id) with the newly created asset's ID on success
+;; 
+;; Clarity 4 features used:
+;;   - stacks-block-time: Provides Unix timestamp of current block
+;;   - This is more reliable than block height for time-based logic
+(define-public (register-asset 
+    (asset-name (string-ascii 64)) 
+    (asset-category (string-ascii 32)) 
+    (maximum-supply uint) 
+    (initial-price uint))
+  (let
+    (
+      ;; Generate new asset ID by incrementing counter
+      (new-asset-id (+ (var-get asset-id-counter) u1))
+      
+      ;; Clarity 4 feature: stacks-block-time returns current block timestamp
+      ;; This enables accurate time-based logic (essential for DeFi)
+      ;; More reliable than using block heights for temporal calculations
+      (current-timestamp stacks-block-time)
+    )
